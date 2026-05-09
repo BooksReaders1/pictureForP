@@ -272,31 +272,50 @@
 
         async function discoverImages() {
             const images = [];
+            
             // 首先尝试没有数字的情况
             const baseUrl = `https://pixiv.re/${pid}.jpg`;
             if (await checkImageUrl(baseUrl)) {
                 images.push({ url: baseUrl, number: '' });
             }
             
-            // 然后尝试带数字的图片
-            for (let i = 1; i <= MAX_IMAGES; i++) {
-                const imageUrl = `https://pixiv.re/${pid}-${i}.jpg`;
-                if (await checkImageUrl(imageUrl)) {
-                    images.push({ url: imageUrl, number: i });
-                } else {
-                    // 连续 3 个找不到就认为结束了
-                    let notFoundCount = 0;
-                    for (let j = 1; j <= 3 && i + j <= MAX_IMAGES; j++) {
-                        const nextUrl = `https://pixiv.re/${pid}-${i + j}.jpg`;
-                        if (!await checkImageUrl(nextUrl)) {
-                            notFoundCount++;
-                        } else {
+            // 使用并发请求来加速图片发现
+            const batchSize = 10; // 每批并发请求的数量
+            let i = 1;
+            let consecutiveNotFound = 0;
+            
+            while (i <= MAX_IMAGES && consecutiveNotFound < 3) {
+                const batchEnd = Math.min(i + batchSize - 1, MAX_IMAGES);
+                const batchUrls = [];
+                
+                // 构建当前批次的 URL 列表
+                for (let j = i; j <= batchEnd; j++) {
+                    batchUrls.push({ index: j, url: `https://pixiv.re/${pid}-${j}.jpg` });
+                }
+                
+                // 并发请求当前批次的所有 URL
+                const results = await Promise.all(
+                    batchUrls.map(item => 
+                        checkImageUrl(item.url).then(exists => ({ ...item, exists }))
+                    )
+                );
+                
+                // 按顺序处理结果，保证图片顺序正确
+                for (const result of results) {
+                    if (result.exists) {
+                        images.push({ url: result.url, number: result.index });
+                        consecutiveNotFound = 0;
+                    } else {
+                        consecutiveNotFound++;
+                        if (consecutiveNotFound >= 3) {
                             break;
                         }
                     }
-                    if (notFoundCount === 3) break;
                 }
+                
+                i = batchEnd + 1;
             }
+            
             return images;
         }
 
