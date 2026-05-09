@@ -198,7 +198,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script>
         let pid = "", currentNumber = 1, totalPages = 0, loadedImages = 0;
-        const MAX_IMAGES = 100, CONCURRENT_LOAD = 8;
+        const MAX_IMAGES = 100;
         let hasShownEndMessage = false;
         let imageUrls = []; // 存储已找到的图片 URL
         let hasTriggeredDownload = false; // 标记是否触发过下载
@@ -403,25 +403,10 @@
 
         function loadImagesConcurrently(startIndex, count) {
             const endIndex = Math.min(startIndex + count, totalPages);
-            const queue = [];
-            for (let i = startIndex; i <= endIndex; i++) queue.push(i);
-            const processQueue = async () => {
-                while (queue.length > 0) {
-                    const batch = queue.splice(0, CONCURRENT_LOAD);
-                    const batchPromises = batch.map(index => new Promise(resolve => {
-                        loadImage(index);
-                        const checkLoaded = setInterval(() => {
-                            const container = document.getElementById(`image-${index}`);
-                            if (container && (container.classList.contains('loaded') || container.querySelector('.error'))) {
-                                clearInterval(checkLoaded);
-                                resolve();
-                            }
-                        }, 100);
-                    }));
-                    await Promise.all(batchPromises);
-                }
-            };
-            processQueue();
+            // 直接启动所有图片的加载，不等待它们完成
+            for (let i = startIndex; i <= endIndex; i++) {
+                loadImage(i);
+            }
         }
 
         async function init() {
