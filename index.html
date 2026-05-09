@@ -18,7 +18,8 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         .error { display: flex; align-items: center; justify-content: center; min-height: 200px; color: #e74c3c; font-size: 14px; cursor: pointer; }
         .error::before { content: "⚠"; margin-right: 8px; font-size: 18px; }
-        .display-image { max-width: 100%; height: auto; display: block; object-fit: contain; }
+        .display-image { max-width: 100%; height: auto; display: block; object-fit: contain; opacity: 0; transition: opacity 0.3s ease; }
+        .display-image.loaded { opacity: 1; }
         .source-image { display: none; }
         .toast { position: fixed; bottom: 50px; left: 50%; transform: translateX(-50%); background-color: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; border-radius: 8px; font-size: 14px; z-index: 9999; opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
         .toast.show { opacity: 1; }
@@ -346,6 +347,7 @@
                 try {
                     clearLoadingState(container);
                     container.classList.add('loaded');
+                    img.classList.add('loaded');
                     loadedImages++;
                     updatePageInfo();
                     img.removeAttribute('data-loading');
