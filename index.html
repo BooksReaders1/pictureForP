@@ -18,8 +18,7 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         .error { display: flex; align-items: center; justify-content: center; min-height: 200px; color: #e74c3c; font-size: 14px; cursor: pointer; }
         .error::before { content: "⚠"; margin-right: 8px; font-size: 18px; }
-        .display-image { max-width: 100%; height: auto; display: block; object-fit: contain; visibility: hidden; }
-        .display-image.loaded { visibility: visible; }
+        .display-image { max-width: 100%; height: auto; display: block; object-fit: contain; }
         .source-image { display: none; }
         .toast { position: fixed; bottom: 50px; left: 50%; transform: translateX(-50%); background-color: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; border-radius: 8px; font-size: 14px; z-index: 9999; opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
         .toast.show { opacity: 1; }
@@ -208,8 +207,10 @@
             const container = document.createElement("div");
             container.id = `image-${index}`; container.className = "image-wrapper";
             const img = document.createElement("img");
-            img.id = `img-${index}`; img.className = "display-image source-image"; img.alt = `第 ${index} 张`;
+            img.id = `img-${index}`; img.className = "display-image"; img.alt = `第 ${index} 张`;
             img.crossOrigin = "anonymous";
+            // 初始时隐藏图片，等待加载完成后显示
+            img.style.display = 'none';
             container.appendChild(img);
             return container;
         }
@@ -219,9 +220,9 @@
             if (container.querySelector('.loading') || container.querySelector('.error')) {
                 return;
             }
-            // 检查是否有已经加载完成的图片（有 loaded 类）
+            // 检查是否有已经加载完成的图片（有 src 且不是正在加载状态）
             const img = container.querySelector('img');
-            if (img && img.classList.contains('loaded')) {
+            if (img && img.src && !img.getAttribute('data-loading')) {
                 return;
             }
             container.innerHTML = '<div class="loading">加载中</div>';
@@ -337,7 +338,7 @@
                 return;
             }
             img.setAttribute('data-loading', 'true');
-            // 不在这里调用 showLoading，因为图片已经在 DOM 中且被 source-image 隐藏
+            showLoading(container);
             const maxRetries = 3;
 
             const imgUrl = imageUrls[index - 1] ? imageUrls[index - 1].url : '';
@@ -355,8 +356,8 @@
 
             img.onload = function() {
                 try {
-                    // 图片加载完成后，移除 source-image 类让图片可见，并移除 loading 状态
-                    img.classList.remove('source-image');
+                    // 图片加载完成后，显示图片并移除 loading 状态
+                    img.style.display = 'block';
                     const loadingEl = container.querySelector('.loading');
                     if (loadingEl) {
                         loadingEl.remove();
@@ -368,6 +369,7 @@
                 } catch (e) {
                     console.error(`处理图片失败 (图片 ${index}):`, e);
                     img.removeAttribute('data-loading');
+                    img.style.display = 'none';
                     if (retryCount < maxRetries) setTimeout(() => loadImage(index, retryCount + 1), 1000 * (retryCount + 1));
                     else showError(container, () => loadImage(index, 0));
                 }
