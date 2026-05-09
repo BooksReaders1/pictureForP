@@ -424,23 +424,22 @@
             const endIndex = Math.min(startIndex + count, totalPages);
             const queue = [];
             for (let i = startIndex; i <= endIndex; i++) queue.push(i);
-            const processQueue = async () => {
-                while (queue.length > 0) {
-                    const batch = queue.splice(0, CONCURRENT_LOAD);
-                    const batchPromises = batch.map(index => new Promise(resolve => {
-                        loadImage(index);
-                        const checkLoaded = setInterval(() => {
-                            const container = document.getElementById(`image-${index}`);
-                            if (container && (container.classList.contains('loaded') || container.querySelector('.error'))) {
-                                clearInterval(checkLoaded);
-                                resolve();
-                            }
-                        }, 100);
-                    }));
-                    await Promise.all(batchPromises);
-                }
-            };
-            processQueue();
+            
+            // 使用 Promise.all 实现真正的并发加载
+            const allPromises = queue.map(index => new Promise(resolve => {
+                loadImage(index);
+                const checkLoaded = setInterval(() => {
+                    const container = document.getElementById(`image-${index}`);
+                    if (container && (container.classList.contains('loaded') || container.querySelector('.error'))) {
+                        clearInterval(checkLoaded);
+                        resolve();
+                    }
+                }, 50);
+            }));
+            
+            Promise.all(allPromises).then(() => {
+                console.log(`批量加载完成：${startIndex} - ${endIndex}`);
+            });
         }
 
         async function init() {
