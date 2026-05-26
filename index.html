@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>pixiv 图片查看</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background-color: #f5f5f5; padding-top: 60px; }
+        .header { position: fixed; top: 0; left: 0; right: 0; height: 60px; background-color: #333; color: #fff; display: flex; align-items: center; justify-content: center; padding: 0 20px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+        .header-title { font-size: 16px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; text-align: center; }
+        .header-page { font-size: 14px; color: #aaa; margin-left: 15px; white-space: nowrap; }
+        .image-container { width: 100%; max-width: 1000px; margin: 0 auto; }
+        .image-wrapper { width: 100%; margin-bottom: 5px; background-color: #e0e0e0; min-height: 200px; }
+        .image-wrapper.loaded { background-color: transparent; }
+        .loading { display: flex; align-items: center; justify-content: center; min-height: 200px; color: #999; font-size: 14px; }
+        .loading::after { content: ""; width: 24px; height: 24px; border: 3px solid #ddd; border-top-color: #666; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 10px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .error { display: flex; align-items: center; justify-content: center; min-height: 200px; color: #e74c3c; font-size: 14px; cursor: pointer; }
+        .error::before { content: "⚠"; margin-right: 8px; font-size: 18px; }
+        .display-image { max-width: 100%; height: auto; display: block; object-fit: contain; }
+        .source-image { display: none; }
+        .toast { position: fixed; bottom: 50px; left: 50%; transform: translateX(-50%); background-color: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; border-radius: 8px; font-size: 14px; z-index: 9999; opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
+        .toast.show { opacity: 1; }
+
+        /* 悬浮窗样式 */
+        .floating-btn {
+            position: fixed;
+            top: 70px;
+            left: 10px;
+            width: 40px;
+            height: 40px;
+            background-color: #000;
+            border-radius: 8px;
+            cursor: move;
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            user-select: none;
+        }
+        .floating-btn.hidden {
+            display: none;
+        }
+        .hamburger-icon {
+            width: 20px;
+            height: 2px;
+            background-color: #fff;
+            position: relative;
+        }
+        .hamburger-icon::before,
+        .hamburger-icon::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 2px;
+            background-color: #fff;
+            left: 0;
+        }
+        .hamburger-icon::before {
+            top: -6px;
+        }
+        .hamburger-icon::after {
+            bottom: -6px;
+        }
+
+        /* 抽屉样式 */
+        .drawer-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 10001;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .drawer-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        .drawer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 280px;
+            max-width: 80vw;
+            height: 100vh;
+            background-color: #000;
+            z-index: 10002;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        .drawer.show {
+            transform: translateX(0);
+        }
+        .drawer-header {
+            color: #fff;
+            font-size: 18px;
+            font-weight: 500;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #333;
+        }
+        .drawer-item {
+            color: #fff;
+            padding: 12px 0;
+            cursor: pointer;
+            border-bottom: 1px solid #333;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        .drawer-item:hover {
+            background-color: #222;
+            margin: 0 -10px;
+            padding-left: 10px;
+            padding-right: 10px;
+        }
+        .drawer-item:last-child {
+            border-bottom: none;
+        }
+        .drawer-input-container {
+            display: none;
+            margin-top: 10px;
+        }
+        .drawer-input-container.show {
+            display: block;
+        }
+        .drawer-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            background-color: #222;
+            color: #fff;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        .drawer-input:focus {
+            outline: none;
+            border-color: #555;
+        }
+        .drawer-btn {
+            width: 100%;
+            padding: 10px;
+            background-color: #333;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .drawer-btn:hover {
+            background-color: #444;
+        }
+
+        @media (max-width: 768px) { .header { height: 50px; padding: 0 15px; } body { padding-top: 50px; } .header-title { font-size: 14px; } .header-page { font-size: 12px; } .image-container { max-width: 100%; } }
+    </style>
+</head>
+<body>
+    <div class="header"><div class="header-title" id="imageTitle">加载中...</div><div class="header-page" id="pageInfo">1 / 1</div></div>
+    <div class="image-container" id="imageContainer"></div>
+    <div id="toast" class="toast"></div>
+
+    <!-- 悬浮窗 -->
+    <div class="floating-btn" id="floatingBtn">
+        <div class="hamburger-icon"></div>
+    </div>
+
+    <!-- 抽屉遮罩层 -->
+    <div class="drawer-overlay" id="drawerOverlay"></div>
+
+    <!-- 抽屉 -->
+    <div class="drawer" id="drawer">
+        <div class="drawer-header">菜单</div>
+        <div class="drawer-item" id="downloadItem">下载当前图片</div>
+        <div class="drawer-item" id="downloadAllItem">下载所有图片 (zip)（实验性功能）</div>
+        <div class="drawer-item" id="hideFloatingBtnItem">隐藏悬浮窗</div>
+        <div class="drawer-item" id="switchImageItem">切换图片</div>
+        <!-- iOS 非 Safari 浏览器专用下载按钮容器 -->
+        <div class="drawer-input-container" id="iosDownloadContainer">
+            <div style="color: #fff; font-size: 14px; margin-bottom: 10px;">ZIP 已生成，请点击下方按钮下载</div>
+            <button class="drawer-btn" id="manualDownloadBtn">手动下载 ZIP</button>
+        </div>
+        <div class="drawer-input-container" id="switchImageInputContainer">
+            <input type="text" class="drawer-input" id="switchImageInput" placeholder="输入作品 ID">
+            <button class="drawer-btn" id="confirmSwitchBtn">确认切换</button>
+        </div>
+    </div>
+
+    <!-- 引入 JSZip 库用于生成 zip 文件 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script>
+        let pid = "", currentNumber = 1, totalPages = 0, loadedImages = 0;
+        const MAX_IMAGES = 100, CONCURRENT_LOAD = 8;
+        let hasShownEndMessage = false;
+        let imageUrls = []; // 存储已找到的图片 URL
+        let hasTriggeredDownload = false; // 标记是否触发过下载
+
+        function createImageElement(index) {
+            const container = document.createElement("div");
+            container.id = `image-${index}`; container.className = "image-wrapper";
+            const img = document.createElement("img");
+            img.id = `img-${index}`; img.className = "display-image"; img.alt = `第 ${index} 张`;
+            img.crossOrigin = "anonymous";
+            container.appendChild(img);
+            return container;
+        }
+
+        function showLoading(container) {
+            if (container.querySelector('.loading') || container.querySelector('.error') || container.querySelector('.display-image:not(.source-image)')) {
+                return;
+            }
+            container.innerHTML = '<div class="loading">加载中</div>';
+        }
+
+        function showError(container, retryCallback) {
+            // 只显示错误提示，不删除 img 元素，以便重试时可以复用
+            // 先移除 loading 状态
+            const loadingEl = container.querySelector('.loading');
+            if (loadingEl) {
+                loadingEl.remove();
+            }
+
+            // 如果已经有 error 元素，不要重复添加
+            if (container.querySelector('.error')) {
+                return;
+            }
+
+            const errorEl = document.createElement('div');
+            errorEl.className = 'error';
+            errorEl.textContent = '加载失败，点击重试';
+            container.appendChild(errorEl);
+
+            if (retryCallback) {
+                errorEl.addEventListener('click', retryCallback);
+            }
+        }
+
+        function clearLoadingState(container) {
+            const loadingEl = container.querySelector('.loading');
+            if (loadingEl) {
+                loadingEl.remove();
+            }
+        }
+
+        function showToast(message, duration = 3000) {
+            const toast = document.getElementById('toast');
+            if (!toast) return;
+            toast.textContent = message;
+            toast.classList.add('show');
+            if (window.toastTimeout) clearTimeout(window.toastTimeout);
+            window.toastTimeout = setTimeout(() => {
+                toast.classList.remove('show');
+            }, duration);
+        }
+
+        async function checkImageUrl(url) {
+            try {
+                const response = await fetch(url, { method: 'HEAD' });
+                return response.ok;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        async function discoverImages() {
+            const images = [];
+            
+            // 首先尝试没有数字的情况
+            const baseUrl = `https://pixiv.re/${pid}.jpg`;
+            if (await checkImageUrl(baseUrl)) {
+                images.push({ url: baseUrl, number: '' });
+            }
+            
+            // 使用并发请求来加速图片发现
+            const batchSize = 10; // 每批并发请求的数量
+            let i = 1;
+            let consecutiveNotFound = 0;
+            
+            while (i <= MAX_IMAGES && consecutiveNotFound < 3) {
+                const batchEnd = Math.min(i + batchSize - 1, MAX_IMAGES);
+                const batchUrls = [];
+                
+                // 构建当前批次的 URL 列表
+                for (let j = i; j <= batchEnd; j++) {
+                    batchUrls.push({ index: j, url: `https://pixiv.re/${pid}-${j}.jpg` });
+                }
+                
+                // 并发请求当前批次的所有 URL
+                const results = await Promise.all(
+                    batchUrls.map(item => 
+                        checkImageUrl(item.url).then(exists => ({ ...item, exists }))
+                    )
+                );
+                
+                // 按顺序处理结果，保证图片顺序正确
+                for (const result of results) {
+                    if (result.exists) {
+                        images.push({ url: result.url, number: result.index });
+                        consecutiveNotFound = 0;
+                    } else {
+                        consecutiveNotFound++;
+                        if (consecutiveNotFound >= 3) {
+                            break;
+                        }
+                    }
+                }
+                
+                i = batchEnd + 1;
+            }
+            
+            return images;
+        }
+
+        function loadImage(index, retryCount = 0) {
+            const container = document.getElementById(`image-${index}`);
+            if (!container) return;
+
+            // 重试时，移除之前的错误提示和已处理的 canvas，恢复初始状态
+            if (retryCount === 0) {
+                const errorEl = container.querySelector('.error');
+                if (errorEl) {
+                    errorEl.remove();
+                }
+                const canvasEl = container.querySelector('canvas');
+                if (canvasEl) {
+                    canvasEl.remove();
+                }
+                const processedImg = container.querySelector('.source-image');
+                if (processedImg) {
+                    processedImg.classList.remove('source-image');
+                }
+            }
+
+            const img = container.querySelector('img');
+            if (!img) return;
+            if (container.classList.contains('loaded') && retryCount === 0) {
+                return;
+            }
+            img.setAttribute('data-loading', 'true');
+            showLoading(container);
+            const maxRetries = 3;
+
+            const imgUrl = imageUrls[index - 1] ? imageUrls[index - 1].url : '';
+            if (!imgUrl) {
+                img.removeAttribute('data-loading');
+                showError(container, () => loadImage(index, 0));
+                return;
+            }
+
+            if (!img.isConnected) {
+                console.error(`图片 ${index} 未挂载到 DOM，重新添加到容器`);
+                container.innerHTML = '';
+                container.appendChild(img);
+            }
+
+            img.onload = function() {
+                try {
+                    clearLoadingState(container);
+                    container.classList.add('loaded');
+                    loadedImages++;
+                    updatePageInfo();
+                    img.removeAttribute('data-loading');
+                } catch (e) {
+                    console.error(`处理图片失败 (图片 ${index}):`, e);
+                    img.removeAttribute('data-loading');
+                    if (retryCount < maxRetries) setTimeout(() => loadImage(index, retryCount + 1), 1000 * (retryCount + 1));
+                    else showError(container, () => loadImage(index, 0));
+                }
+            };
+            img.onerror = function(e) {
+                console.warn(`加载图片失败 (图片 ${index}), 重试次数：${retryCount}, 错误事件:`, e);
+                img.removeAttribute('data-loading');
+                if (retryCount < maxRetries) setTimeout(() => loadImage(index, retryCount + 1), 1000 * (retryCount + 1));
+                else showError(container, () => loadImage(index, 0));
+            };
+
+            img.src = imgUrl;
+        }
+
+        function updatePageInfo() {
+            const pageInfo = document.getElementById('pageInfo');
+            const visibleImages = getVisibleImages();
+            if (visibleImages.length > 0) {
+                const firstVisible = Math.min(...visibleImages);
+                pageInfo.textContent = `${firstVisible} / ${totalPages || '?'}`;
+            }
+        }
+
+        function getVisibleImages() {
+            const pages = [];
+            const viewportTop = window.scrollY + window.innerHeight / 2;
+            document.querySelectorAll('.image-wrapper').forEach((wrapper, index) => {
+                const rect = wrapper.getBoundingClientRect();
+                const wrapperTop = rect.top + window.scrollY;
+                const wrapperBottom = wrapperTop + rect.height;
+                if (wrapperTop <= viewportTop && wrapperBottom >= viewportTop) pages.push(index + 1);
+            });
+            return pages;
+        }
+
+        function loadImagesAroundCurrentPage() {
+            const visibleImages = getVisibleImages();
+            if (visibleImages.length === 0) return;
+            const currentPage = Math.min(...visibleImages);
+            for (let i = currentPage; i < currentPage + 8 && i <= totalPages; i++) {
+                const container = document.getElementById(`image-${i}`);
+                if (!container) continue;
+                const img = container.querySelector('img');
+                if (!container.classList.contains('loaded') && img && img.getAttribute('data-loading') !== 'true') {
+                    loadImage(i);
+                }
+            }
+        }
+
+        function loadImagesConcurrently(startIndex, count) {
+            const endIndex = Math.min(startIndex + count, totalPages);
+            const queue = [];
+            for (let i = startIndex; i <= endIndex; i++) queue.push(i);
+            
+            // 使用 Promise.all 实现真正的并发加载
+            const allPromises = queue.map(index => new Promise(resolve => {
+                loadImage(index);
+                const checkLoaded = setInterval(() => {
+                    const container = document.getElementById(`image-${index}`);
+                    if (container && (container.classList.contains('loaded') || container.querySelector('.error'))) {
+                        clearInterval(checkLoaded);
+                        resolve();
+                    }
+                }, 50);
+            }));
+            
+            Promise.all(allPromises).then(() => {
+                console.log(`批量加载完成：${startIndex} - ${endIndex}`);
+            });
+        }
+
+        async function init() {
+            const urlParams = new URLSearchParams(window.location.search);
+            pid = urlParams.get('pid') || urlParams.get('id') || urlParams.get('ID') || '';
+
+            if (!pid) {
+                document.getElementById('imageTitle').textContent = '请输入作品 ID';
+                showToast('请在 URL 中添加 ?pid=作品 ID 参数');
+                return;
+            }
+
+            document.getElementById('imageTitle').textContent = `作品 ID: ${pid}`;
+            showToast('正在发现图片...');
+
+            // 发现所有可用的图片
+            imageUrls = await discoverImages();
+            totalPages = imageUrls.length;
+
+            if (totalPages === 0) {
+                document.getElementById('imageContainer').innerHTML = '<div style="text-align:center;padding:50px;color:#666;">未找到任何图片</div>';
+                document.getElementById('pageInfo').textContent = '0 / 0';
+                showToast('未找到图片');
+                return;
+            }
+
+            document.getElementById('pageInfo').textContent = `1 / ${totalPages}`;
+
+            // 创建图片元素
+            const container = document.getElementById('imageContainer');
+            for (let i = 1; i <= totalPages; i++) {
+                container.appendChild(createImageElement(i));
+            }
+
+            loadImagesConcurrently(1, Math.min(8, totalPages));
+
+            let scrollTimeout;
+            let toastTimer = null;
+            window.addEventListener('scroll', () => {
+                updatePageInfo();
+
+                const scrollTop = window.scrollY || window.pageYOffset;
+                const windowHeight = window.innerHeight;
+                const documentHeight = document.documentElement.scrollHeight;
+
+                if (scrollTop + windowHeight >= documentHeight - 10) {
+                    if (!hasShownEndMessage) {
+                        hasShownEndMessage = true;
+                        showToast('已经到底了');
+                        if (toastTimer) clearTimeout(toastTimer);
+                        toastTimer = setTimeout(() => {
+                            hasShownEndMessage = false;
+                        }, 3000);
+                    }
+                } else {
+                    hasShownEndMessage = false;
+                }
+
+                clearTimeout(scrollTimeout);
+                scrollTimeout = setTimeout(() => {
+                    loadImagesAroundCurrentPage();
+                }, 100);
+            });
+
+            initFloatingWindow();
+        }
+
+        function initFloatingWindow() {
+            const floatingBtn = document.getElementById('floatingBtn');
+            const drawer = document.getElementById('drawer');
+            const drawerOverlay = document.getElementById('drawerOverlay');
+            const downloadItem = document.getElementById('downloadItem');
+            const downloadAllItem = document.getElementById('downloadAllItem');
+            const hideFloatingBtnItem = document.getElementById('hideFloatingBtnItem');
+            const switchImageItem = document.getElementById('switchImageItem');
+            const switchImageInputContainer = document.getElementById('switchImageInputContainer');
+            const switchImageInput = document.getElementById('switchImageInput');
+            const confirmSwitchBtn = document.getElementById('confirmSwitchBtn');
+            const iosDownloadContainer = document.getElementById('iosDownloadContainer');
+            const manualDownloadBtn = document.getElementById('manualDownloadBtn');
+
+            let isDragging = false;
+            let startX, startY, initialLeft, initialTop;
+
+            iosDownloadContainer.classList.remove('show');
+
+            floatingBtn.addEventListener('click', () => {
+                drawer.classList.add('show');
+                drawerOverlay.classList.add('show');
+            });
+
+            function closeDrawer() {
+                drawer.classList.remove('show');
+                drawerOverlay.classList.remove('show');
+                switchImageInputContainer.classList.remove('show');
+                if (!hasTriggeredDownload) {
+                    iosDownloadContainer.classList.remove('show');
+                }
+            }
+
+            drawerOverlay.addEventListener('click', () => {
+                if (hasTriggeredDownload && iosDownloadContainer.classList.contains('show')) {
+                    return;
+                }
+                closeDrawer();
+            });
+
+            floatingBtn.addEventListener('mousedown', (e) => {
+                isDragging = false;
+                startX = e.clientX;
+                startY = e.clientY;
+                const rect = floatingBtn.getBoundingClientRect();
+                initialLeft = rect.left;
+                initialTop = rect.top;
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+
+            function onMouseMove(e) {
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+
+                if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+                    isDragging = true;
+                }
+
+                floatingBtn.style.left = `${initialLeft + dx}px`;
+                floatingBtn.style.top = `${initialTop + dy}px`;
+            }
+
+            function onMouseUp() {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+
+                if (isDragging) {
+                    const clickHandler = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        floatingBtn.removeEventListener('click', clickHandler);
+                    };
+                    floatingBtn.addEventListener('click', clickHandler, { once: true });
+                }
+            }
+
+            downloadItem.addEventListener('click', () => {
+                downloadCurrentImage();
+            });
+
+            downloadAllItem.addEventListener('click', async () => {
+                await downloadAllImages();
+            });
+
+            manualDownloadBtn.addEventListener('click', () => {
+                if (window.iosZipBlob && window.iosZipUrl) {
+                    const a = document.createElement('a');
+                    a.href = window.iosZipUrl;
+                    a.download = `pixiv_${pid}.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    showToast('下载已触发，请查看浏览器下载提示');
+                } else {
+                    showToast('ZIP 文件尚未生成，请先点击下载菜单');
+                }
+            });
+
+            hideFloatingBtnItem.addEventListener('click', () => {
+                closeDrawer();
+                floatingBtn.classList.add('hidden');
+            });
+
+            switchImageItem.addEventListener('click', () => {
+                switchImageInputContainer.classList.add('show');
+                switchImageInput.focus();
+            });
+
+            confirmSwitchBtn.addEventListener('click', () => {
+                const newId = switchImageInput.value.trim();
+                if (newId) {
+                    switchImage(newId);
+                    closeDrawer();
+                } else {
+                    showToast('请输入作品 ID');
+                }
+            });
+
+            switchImageInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    const newId = switchImageInput.value.trim();
+                    if (newId) {
+                        switchImage(newId);
+                        closeDrawer();
+                    } else {
+                        showToast('请输入作品 ID');
+                    }
+                }
+            });
+        }
+
+        function downloadCurrentImage() {
+            const visibleImages = getVisibleImages();
+            if (visibleImages.length === 0) {
+                showToast('没有可见的图片');
+                return;
+            }
+            const currentIndex = Math.min(...visibleImages);
+            const container = document.getElementById(`image-${currentIndex}`);
+            const img = container.querySelector('img');
+            if (!img || !img.src) {
+                showToast('图片尚未加载');
+                return;
+            }
+            const link = document.createElement('a');
+            link.href = img.src;
+            link.download = `pixiv_${pid}${imageUrls[currentIndex - 1].number ? '-' + imageUrls[currentIndex - 1].number : ''}.jpg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast('下载已触发');
+        }
+
+        async function downloadAllImages() {
+            showToast('正在准备下载，请稍候...');
+
+            try {
+                const zip = new JSZip();
+                const folder = zip.folder(`pixiv_${pid}`);
+
+                let downloadedCount = 0;
+
+                for (let i = 1; i <= totalPages; i++) {
+                    const container = document.getElementById(`image-${i}`);
+                    if (!container) continue;
+
+                    const img = container.querySelector('img');
+                    if (!img || !img.src) {
+                        // 尝试加载图片
+                        loadImage(i);
+                        // 等待图片加载
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+
+                    if (img && img.src) {
+                        try {
+                            const response = await fetch(img.src);
+                            const blob = await response.blob();
+                            const fileName = `pixiv_${pid}${imageUrls[i - 1].number ? '-' + imageUrls[i - 1].number : ''}.jpg`;
+                            folder.file(fileName, blob);
+                            downloadedCount++;
+
+                            if (downloadedCount % 10 === 0) {
+                                showToast(`正在准备下载，已处理 ${downloadedCount} 张`);
+                            }
+                        } catch (e) {
+                            console.error(`下载图片 ${i} 失败:`, e);
+                        }
+                    }
+                }
+
+                if (downloadedCount === 0) {
+                    showToast('暂无可下载的图片');
+                    return;
+                }
+
+                const content = await zip.generateAsync({ type: 'blob' });
+
+                hasTriggeredDownload = true;
+
+                window.iosZipBlob = content;
+                window.iosZipUrl = URL.createObjectURL(content);
+
+                const drawer = document.getElementById('drawer');
+                const drawerOverlay = document.getElementById('drawerOverlay');
+                const iosDownloadContainer = document.getElementById('iosDownloadContainer');
+
+                iosDownloadContainer.classList.add('show');
+                drawer.classList.add('show');
+                drawerOverlay.classList.add('show');
+
+                showToast(`ZIP 已生成 (${downloadedCount} 张图片)，请在侧边栏点击"手动下载 ZIP"按钮下载`);
+            } catch (error) {
+                console.error('下载失败:', error);
+                showToast('下载失败，请重试');
+            }
+        }
+
+        function switchImage(newId) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('pid', newId);
+            window.history.pushState({}, '', url);
+
+            pid = newId;
+
+            document.getElementById('imageTitle').textContent = `作品 ID: ${pid}`;
+
+            const container = document.getElementById('imageContainer');
+            container.innerHTML = '';
+
+            loadedImages = 0;
+            hasShownEndMessage = false;
+            imageUrls = [];
+            hasTriggeredDownload = false;
+
+            if (window.iosZipUrl) {
+                URL.revokeObjectURL(window.iosZipUrl);
+                window.iosZipUrl = null;
+            }
+            if (window.iosZipBlob) {
+                window.iosZipBlob = null;
+            }
+
+            const iosDownloadContainer = document.getElementById('iosDownloadContainer');
+            if (iosDownloadContainer) {
+                iosDownloadContainer.classList.remove('show');
+            }
+
+            init();
+
+            window.scrollTo(0, 0);
+        }
+
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+        else init();
+    </script>
+</body>
+</html>
